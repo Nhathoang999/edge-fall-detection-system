@@ -1,0 +1,7 @@
+1. Chọn lĩnh vực & đề tài Xác định lĩnh vực quan tâm → đọc tổng quan → tìm research gap → chốt đề tài cụ thể.
+2. Tổng quan tài liệu (Literature Review) Tìm kiếm paper trên Google Scholar, Scopus, IEEE → đọc, tóm tắt, phân loại → xác định điểm mới của đề tài mình so với các công trình trước.
+3. Xác định mục tiêu & phương pháp Đặt câu hỏi nghiên cứu rõ ràng → chọn phương pháp phù hợp (thực nghiệm, mô phỏng, khảo sát...) → thiết kế thí nghiệm / mô hình.
+4. Thu thập & xử lý dữ liệu Chuẩn bị dataset → tiền xử lý → chia train/val/test (nếu là AI/ML).
+5. Thực hiện thí nghiệm Xây dựng mô hình / hệ thống → chạy thí nghiệm → ghi chép kết quả đầy đủ.
+6. Phân tích & đánh giá kết quả So sánh với baseline → phân tích định lượng + định tính → rút ra nhận xét.
+7. Viết báo cáo / bài báo Viết theo cấu trúc: Abstract → Introduction → Related Work → Method → Experiments → Conclusion.
