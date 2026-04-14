@@ -1,0 +1,8 @@
+Nạp Video / Mở Webcam Tự Phát,Trình Trực Quan Khung Xương (Skeleton View),Hiển thị Chỉ Cơ - Log Tỉ Lệ Ngã,timestamp
+.gradio\flagged\Nạp Video  Mở Webcam Tự Phát\5da6f95f976d91254296\fall_example_1.mp4,,,2026-04-12 18:58:32.173784
+.gradio\flagged\Nạp Video  Mở Webcam Tự Phát\c3865a689579a84f21c8\fall_example_2.mp4,.gradio\flagged\Trình Trực Quan Khung Xương (Skeleton View)\51f3713b83c3e4a5c54f\web_processed_gradio_output_1775996795757.mp4,"Tóm lược Logs Lịch sử (Events / Status):
+Frame 1: Buffering frames...
+Frame 30: NO_FALL (Prob: 1.00)
+Frame 60: NO_FALL (Prob: 1.00)
+Frame 90: FALL (Prob: 0.84)
+Frame 120: FALL (Prob: 0.92)",2026-04-12 19:29:32.503866
