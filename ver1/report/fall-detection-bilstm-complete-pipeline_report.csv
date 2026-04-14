@@ -1,0 +1,5 @@
+Tập Dữ Liệu,Lớp,Độ Chính Xác (Precision),Độ Nhạy (Recall),Điểm F1,Điểm F2,Số Mẫu
+Validation,no_fall,0.9237,0.9498,0.9366,0.9445,1275
+Validation,fall,0.9446,0.916,0.9301,0.9216,1191
+Kiểm Tra,no_fall,0.9226,0.9529,0.9375,0.9467,1275
+Kiểm Tra,fall,0.9478,0.9144,0.9308,0.9209,1192
