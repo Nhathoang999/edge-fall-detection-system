@@ -11,8 +11,8 @@ import os
 import shutil # Dùng để sao chép file thư mục
 
 # --- CẤU HÌNH HỆ THỐNG (Tinh chỉnh cho phù hợp với Gradio) ---
-MODEL_PATH = 'fall_detection_transformer.tflite' # Đường dẫn tới Model AI
-INPUT_TIMESTEPS = 30 # Độ dài mỗi Sequence để nhét vào AI
+MODEL_PATH = 'fall_detection_transformer_v1.tflite' # Đường dẫn tới Model AI
+INPUT_TIMESTEPS = 60 # Độ dài mỗi Sequence để nhét vào AI
 FALL_CONFIDENCE_THRESHOLD = 0.90 # Tỉ lệ rơi ngã (90%)
 MIN_KEYPOINT_CONFIDENCE_FOR_NORMALIZATION = 0.3 # Ngưỡng tự tin thấp nhất để trích xuất điểm ảnh Landmarks
 mp_pose = mp.solutions.pose
