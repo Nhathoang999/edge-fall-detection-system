@@ -9,6 +9,156 @@ from collections import deque
 import gradio as gr
 import os
 import shutil # Dùng để sao chép file thư mục
+import uuid
+import threading
+import queue
+import atexit
+
+# Server-side session store to keep heavy objects (feature sequences) out of Gradio's JSON state
+SESSION_STORE = {}
+
+# Worker settings
+WORKER_QUEUE_MAXSIZE = 1
+SESSION_TIMEOUT_SECONDS = 300  # auto-clean sessions after inactivity (seconds)
+
+
+def _ensure_session_worker(session_id):
+    """Ensure per-session worker and queue exist and start worker thread if needed."""
+    session = SESSION_STORE.get(session_id)
+    if session is None:
+        return
+    if 'in_queue' not in session:
+        session['in_queue'] = queue.Queue(maxsize=WORKER_QUEUE_MAXSIZE)
+    if 'running' not in session or not session['running']:
+        session['running'] = True
+        t = threading.Thread(target=_realtime_worker, args=(session_id,), daemon=True)
+        session['worker'] = t
+        t.start()
+
+
+def _realtime_worker(session_id):
+    """Background worker that consumes latest frames and runs MediaPipe + inference."""
+    try:
+        session = SESSION_STORE.get(session_id)
+        if session is None:
+            return
+        # Each worker keeps its own MediaPipe Pose instance (thread-safe)
+        with mp_pose.Pose(static_image_mode=False,
+                          model_complexity=pose_complexity,
+                          smooth_landmarks=True,
+                          min_detection_confidence=0.5,
+                          min_tracking_confidence=0.5) as worker_pose:
+            last_process_time = 0.0
+            while session.get('running', False):
+                try:
+                    frame = session['in_queue'].get(timeout=0.5)
+                except queue.Empty:
+                    # check for inactivity
+                    if time.time() - session.get('last_update_time', 0) > SESSION_TIMEOUT_SECONDS:
+                        session['running'] = False
+                        break
+                    continue
+
+                session['last_update_time'] = time.time()
+                # Downscale same as main thread
+                proc_frame = frame
+                try:
+                    h, w = proc_frame.shape[:2]
+                    if REALTIME_PROCESS_WIDTH and w > REALTIME_PROCESS_WIDTH:
+                        scale = REALTIME_PROCESS_WIDTH / float(w)
+                        target_h = max(1, int(h * scale))
+                        proc_frame = cv2.resize(proc_frame, (REALTIME_PROCESS_WIDTH, target_h), interpolation=cv2.INTER_LINEAR)
+                    image_rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
+                    image_rgb.flags.writeable = False
+                    results = worker_pose.process(image_rgb)
+                except Exception:
+                    results = None
+
+                if not results or not getattr(results, 'pose_landmarks', None):
+                    session['last_center'] = None
+                    # keep previous landmarks until they age out on main thread to avoid flicker
+                    continue
+
+                # compute simple center (use shoulders/hips);
+                try:
+                    lm = results.pose_landmarks.landmark
+                    # prefer hips then shoulders
+                    ids = []
+                    try:
+                        ids = [mp_pose.PoseLandmark.LEFT_HIP.value, mp_pose.PoseLandmark.RIGHT_HIP.value]
+                    except Exception:
+                        ids = []
+                    if not ids:
+                        try:
+                            ids = [mp_pose.PoseLandmark.LEFT_SHOULDER.value, mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+                        except Exception:
+                            ids = []
+                    cx, cy, count = 0.0, 0.0, 0
+                    for i in ids:
+                        if i < len(lm):
+                            cx += lm[i].x
+                            cy += lm[i].y
+                            count += 1
+                    if count > 0:
+                        cx /= count
+                        cy /= count
+                        session['last_center'] = (cx, cy)
+                    else:
+                        session['last_center'] = None
+                except Exception:
+                    session['last_center'] = None
+
+                # store normalized landmarks list for main-thread drawing
+                try:
+                    session['last_landmarks'] = [(float(p.x), float(p.y), float(getattr(p, 'visibility', 1.0))) for p in results.pose_landmarks.landmark]
+                    session['last_landmarks_time'] = time.time()
+                except Exception:
+                    session['last_landmarks'] = None
+                    session['last_landmarks_time'] = session.get('last_landmarks_time', 0)
+
+                # extract features and update sequence
+                try:
+                    feats = extract_and_normalize_features(results)
+                    session['seq'].append(feats)
+                except Exception:
+                    pass
+
+                # run inference when enough frames accumulated
+                try:
+                    if len(session['seq']) == INPUT_TIMESTEPS:
+                        sample_input = np.array(list(session['seq']), dtype=np.float32)
+                        sample_input = np.expand_dims(sample_input, axis=0)
+                        interpreter.set_tensor(input_details[0]['index'], sample_input)
+                        interpreter.invoke()
+                        output_data = interpreter.get_tensor(output_details[0]['index'])
+                        prob_fall = float(output_data[0][0])
+                        if prob_fall > FALL_CONFIDENCE_THRESHOLD:
+                            session['last_label'] = 'fall'
+                            session['last_conf'] = prob_fall
+                        else:
+                            session['last_label'] = 'no_fall'
+                            session['last_conf'] = 1.0 - prob_fall
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _cleanup_sessions():
+    now = time.time()
+    for sid in list(SESSION_STORE.keys()):
+        s = SESSION_STORE.get(sid)
+        if not s:
+            continue
+        if not s.get('running', False) and now - s.get('last_update_time', 0) > SESSION_TIMEOUT_SECONDS:
+            try:
+                del SESSION_STORE[sid]
+            except Exception:
+                pass
+
+
+# ensure cleanup on exit
+atexit.register(_cleanup_sessions)
 
 # --- CẤU HÌNH HỆ THỐNG (Tinh chỉnh cho phù hợp với Gradio) ---
 MODEL_PATH = 'fall_detection_transformer_v1.tflite' # Đường dẫn tới Model AI
@@ -20,6 +170,35 @@ pose_complexity = 0 # Thu nhỏ độ phức tạp của Pose về nhỏ nhất 
 use_static_image_mode = False # Tắt chế độ static mode khi bắt đầu
 
 FALL_EVENT_COOLDOWN = 10 # Giới hạn lặp thông báo (Tối thiểu 10 seconds cảnh báo 1 lần)
+
+# --- Realtime optimization settings ---
+# Resize width for processing (maintain aspect ratio). Set to None to disable resizing.
+REALTIME_PROCESS_WIDTH = 640
+# Run TFLite inference only every N frames (>=1). Larger => less CPU.
+REALTIME_INFERENCE_EVERY_N_FRAMES = 2
+# Draw landmarks only every N frames to reduce drawing overhead.
+REALTIME_DRAW_EVERY_N_FRAMES = 2
+# Option: draw full skeleton overlay (from worker landmarks) on display frame
+REALTIME_DRAW_FULL_SKELETON = True
+# Draw full skeleton every N frames (main thread draws lightweight lines/circles)
+REALTIME_FULL_DRAW_EVERY_N_FRAMES = 8
+
+# How long to keep drawing last known landmarks when worker briefly misses detections (seconds)
+LANDMARK_PERSIST_SECONDS = 1.5
+# How often to update the textual log shown to the user (in frames)
+REALTIME_LOG_EVERY_N_FRAMES = 10
+
+# Persistent MediaPipe Pose instance for realtime (avoid recreating per-frame)
+try:
+    realtime_pose = mp_pose.Pose(static_image_mode=False,
+                                 model_complexity=pose_complexity,
+                                 smooth_landmarks=True,
+                                 min_detection_confidence=0.5,
+                                 min_tracking_confidence=0.5)
+    print("Initialized persistent realtime_pose for webcam (reused across frames).")
+except Exception as e:
+    realtime_pose = None
+    print(f"Warning: Could not initialize persistent realtime_pose: {e}")
 
 # ----- 0. ĐỊNH NGHĨA VÀ CHUẨN HÓA MỤC TIÊU CÁC KHỚP XƯƠNG (KEYPOINTS) -----
 KEYPOINT_NAMES_ORIGINAL = [
@@ -192,97 +371,327 @@ def normalize_keypoints(raw_keypoints):
         norm.append(n)
     return norm
 
-def process_frame_for_realtime(frame, state):
-    from collections import deque
+def process_frame_for_realtime(frame, state, draw_full_skeleton=True):
     import cv2
-    
-    if state is None:
-        state = (0, deque(maxlen=INPUT_TIMESTEPS), "Trạng thái: Khởi chạy...")
-        
-    if frame is None:
-        return frame, state
-
     import numpy as np
-    frame = np.ascontiguousarray(np.copy(frame))
-    frame.flags.writeable = True
-        
-    frame_count, local_feature_sequence, overall_status = state
-    frame_count += 1
-    
+    from collections import deque
+    global SESSION_STORE
+
     try:
-        
-        import numpy as np
-
-        with mp_pose.Pose(static_image_mode=False, model_complexity=0, smooth_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5) as global_realtime_pose:
-            results = global_realtime_pose.process(frame)
-            
-            if not getattr(results, 'pose_landmarks', None):
-                cv2.putText(frame, "No Person (Buffering...)", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,165,255), 2)
-                return frame, (frame_count, local_feature_sequence, overall_status)
-                
-            current_features = extract_and_normalize_features(results)
-                
-            local_feature_sequence.append(current_features)
-            
-            prediction_label = "no_fall"
-            display_confidence_value = 0.0
-            text_to_show_on_frame = "Buffering frames..."
-            color_status = (0, 255, 0)
-            
-            if len(local_feature_sequence) == INPUT_TIMESTEPS:
-                sample_input = np.array([local_feature_sequence], dtype=np.float32)
-                interpreter.set_tensor(input_details[0]['index'], sample_input)
-                interpreter.invoke()
-                output_data = interpreter.get_tensor(output_details[0]['index'])
-                prediction_probability_fall = float(output_data[0][0])
-                
-                if prediction_probability_fall > FALL_CONFIDENCE_THRESHOLD:
-                    prediction_label = "fall"
-                    display_confidence_value = prediction_probability_fall
-                    text_to_show_on_frame = f"FALL DETECTED (Prob: {display_confidence_value:.2f})"
-                    overall_status = f"CẢNH BÁO TÉ NGÃ - Frame {frame_count}\n" + str(overall_status)
+        if state is None:
+            session_id = str(uuid.uuid4())
+            SESSION_STORE[session_id] = {
+                'seq': deque(maxlen=INPUT_TIMESTEPS),
+                'last_fall_time': 0.0,
+                'last_label': 'no_fall',
+                'last_conf': 0.0,
+                'last_center': None,
+                'last_update_time': time.time(),
+                'running': False,
+                # local log cache to avoid updating UI every frame
+                'last_log_text': '',
+                'last_log_frame': -1,
+                'last_log_label': None
+            }
+            frame_count = 0
+            overall_status = "Trạng thái: Khởi chạy..."
+            infer_counter = 0
+            last_label = "no_fall"
+            last_conf = 0.0
+        else:
+            if isinstance(state, (list, tuple)) and len(state) >= 6 and isinstance(state[0], str) and state[0] in SESSION_STORE:
+                session_id = state[0]
+                frame_count = int(state[1])
+                overall_status = state[2]
+                infer_counter = int(state[3])
+                last_label = state[4]
+                last_conf = float(state[5])
+            else:
+                if isinstance(state, (list, tuple)) and len(state) >= 2 and hasattr(state[1], 'append'):
+                    session_id = str(uuid.uuid4())
+                    SESSION_STORE[session_id] = {
+                        'seq': state[1],
+                        'last_fall_time': 0.0,
+                        'last_label': 'no_fall',
+                        'last_conf': 0.0,
+                        'last_center': None,
+                        'last_update_time': time.time(),
+                        'running': False,
+                        'last_log_text': '',
+                        'last_log_frame': -1,
+                        'last_log_label': None
+                    }
+                    frame_count = int(state[0]) if len(state) > 0 else 0
+                    overall_status = state[2] if len(state) > 2 else "Trạng thái: Khởi chạy..."
+                    infer_counter = int(state[3]) if len(state) > 3 else 0
+                    last_label = state[4] if len(state) > 4 else "no_fall"
+                    last_conf = float(state[5]) if len(state) > 5 else 0.0
                 else:
-                    prediction_label = "no_fall"
-                    display_confidence_value = 1.0 - prediction_probability_fall
-                    text_to_show_on_frame = f"NORMAL (Prob: {display_confidence_value:.2f})"
-                    
-            if prediction_label == "fall":
-                cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (255, 0, 0), 6)
-                color_status = (255, 0, 0)
-                
+                    session_id = str(uuid.uuid4())
+                    SESSION_STORE[session_id] = {
+                        'seq': deque(maxlen=INPUT_TIMESTEPS),
+                        'last_fall_time': 0.0,
+                        'last_label': 'no_fall',
+                        'last_conf': 0.0,
+                        'last_center': None,
+                        'last_update_time': time.time(),
+                        'running': False,
+                        'last_log_text': '',
+                        'last_log_frame': -1,
+                        'last_log_label': None
+                    }
+                    frame_count = 0
+                    overall_status = "Trạng thái: Khởi chạy..."
+                    infer_counter = 0
+                    last_label = "no_fall"
+                    last_conf = 0.0
 
-            mp.solutions.drawing_utils.draw_landmarks(
-                image=frame,
-                landmark_list=results.pose_landmarks,
-                connections=mp_pose.POSE_CONNECTIONS,
-                landmark_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
-                connection_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
-            )
-            cv2.putText(frame, text_to_show_on_frame, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color_status, 3)
-            
+        # Ensure background worker is running for this session
+        _ensure_session_worker(session_id)
+
+        if frame is None:
+            status_text = "Trạng thái nghỉ"
+            return None, status_text, (session_id, frame_count, overall_status, infer_counter, last_label, last_conf)
+
+        # Prepare display frame and an enqueue copy (downscaled)
+        frame = np.ascontiguousarray(np.copy(frame))
+        frame.flags.writeable = True
+        orig_h, orig_w = frame.shape[:2]
+        enqueue_frame = frame
+        if REALTIME_PROCESS_WIDTH and orig_w > REALTIME_PROCESS_WIDTH:
+            scale = REALTIME_PROCESS_WIDTH / float(orig_w)
+            target_h = max(1, int(orig_h * scale))
+            enqueue_frame = cv2.resize(frame, (REALTIME_PROCESS_WIDTH, target_h), interpolation=cv2.INTER_LINEAR)
+
+        # Try to push latest frame to worker queue (non-blocking, replace if full)
+        session = SESSION_STORE.get(session_id)
+        try:
+            if session is not None and 'in_queue' in session:
+                try:
+                    session['in_queue'].put_nowait(enqueue_frame.copy())
+                except queue.Full:
+                    try:
+                        session['in_queue'].get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        session['in_queue'].put_nowait(enqueue_frame.copy())
+                    except queue.Full:
+                        pass
+        except Exception:
+            pass
+
+        # Read latest lightweight results from session
+        last_center = session.get('last_center') if session is not None else None
+        last_label = session.get('last_label', last_label) if session is not None else last_label
+        last_conf = session.get('last_conf', last_conf) if session is not None else last_conf
+
+        # Draw lightweight overlay (center + label) to keep UI responsive
+        display_frame = frame
+        if last_center:
+            try:
+                cx = int(last_center[0] * orig_w)
+                cy = int(last_center[1] * orig_h)
+                color = (0, 255, 0) if last_label != 'fall' else (0, 0, 255)
+                cv2.circle(display_frame, (cx, cy), 8, color, -1)
+            except Exception:
+                pass
+
+        # Optionally draw full skeleton (lines + joints) using normalized landmarks from worker
+        try:
+            if draw_full_skeleton:
+                now_ts = time.time()
+                landmarks = session.get('last_landmarks') if session is not None else None
+                landmarks_time = session.get('last_landmarks_time', 0) if session is not None else 0
+                # only draw if landmarks are recent enough to avoid flicker
+                if landmarks and (now_ts - landmarks_time) <= LANDMARK_PERSIST_SECONDS:
+                    # draw connections
+                    try:
+                        for conn in mp_pose.POSE_CONNECTIONS:
+                            try:
+                                a, b = conn
+                                idx_a = a.value if hasattr(a, 'value') else int(a)
+                                idx_b = b.value if hasattr(b, 'value') else int(b)
+                                if idx_a < len(landmarks) and idx_b < len(landmarks):
+                                    x1 = int(landmarks[idx_a][0] * orig_w)
+                                    y1 = int(landmarks[idx_a][1] * orig_h)
+                                    x2 = int(landmarks[idx_b][0] * orig_w)
+                                    y2 = int(landmarks[idx_b][1] * orig_h)
+                                    cv2.line(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    # draw joints
+                    for j, (lx, ly, lv) in enumerate(landmarks):
+                        try:
+                            if lv > 0.15:
+                                px = int(lx * orig_w)
+                                py = int(ly * orig_h)
+                                cv2.circle(display_frame, (px, py), 3, (0, 0, 255), -1)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # compute status text from model state (prefer model label/confidence)
+        try:
+            seq_len = len(session.get('seq', [])) if session is not None else 0
+            if seq_len < INPUT_TIMESTEPS:
+                base_text = f"COLLECTING ({seq_len}/{INPUT_TIMESTEPS})"
+            else:
+                base_text = f"{session.get('last_label', last_label).upper()} ({session.get('last_conf', last_conf):.2f})"
+        except Exception:
+            try:
+                base_text = f"{last_label.upper()} ({last_conf:.2f})"
+            except Exception:
+                base_text = "Buffering..."
+
+        # Update textual log only every REALTIME_LOG_EVERY_N_FRAMES frames, or immediately if label changed
+        try:
+            if session is None:
+                status_text = base_text
+            else:
+                # ensure last_log fields exist
+                if 'last_log_text' not in session:
+                    session['last_log_text'] = base_text
+                    session['last_log_frame'] = -1
+                    session['last_log_label'] = session.get('last_label')
+
+                update_log = False
+                try:
+                    if REALTIME_LOG_EVERY_N_FRAMES and (frame_count % REALTIME_LOG_EVERY_N_FRAMES == 0):
+                        update_log = True
+                except Exception:
+                    update_log = True
+
+                # immediate update if the model label changed
+                if session.get('last_label') != session.get('last_log_label'):
+                    update_log = True
+
+                if update_log:
+                    session['last_log_text'] = base_text
+                    session['last_log_frame'] = frame_count
+                    session['last_log_label'] = session.get('last_label')
+
+                status_text = session.get('last_log_text', base_text)
+        except Exception:
+            status_text = base_text
+
+        cv2.putText(display_frame, status_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+
+        # update timestamp
+        session['last_update_time'] = time.time()
+        frame_count += 1
+
+        return display_frame, status_text, (session_id, frame_count, overall_status, infer_counter, last_label, last_conf)
     except Exception as e:
-        cv2.putText(frame, f"Error: {str(e)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-        
-    return frame, (frame_count, local_feature_sequence, str(overall_status)[:500])
+        try:
+            cv2.putText(frame, f"Error: {str(e)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+        except Exception:
+            pass
+        session_id = locals().get('session_id', str(uuid.uuid4()))
+        if session_id not in SESSION_STORE:
+            SESSION_STORE[session_id] = {
+                'seq': deque(maxlen=INPUT_TIMESTEPS),
+                'last_fall_time': 0.0,
+                'last_label': 'no_fall',
+                'last_conf': 0.0,
+                'last_center': None,
+                'last_update_time': time.time(),
+                'running': False,
+                'last_log_text': '',
+                'last_log_frame': -1,
+                'last_log_label': None
+            }
+        status_text = f"Error: {str(e)}"
+        return frame, status_text, (session_id, locals().get('frame_count', 0), "Error", locals().get('infer_counter', 0), "no_fall", 0.0)
 
-def process_video_for_gradio(uploaded_video_path_temp):
-    if uploaded_video_path_temp is None:
+def process_video_for_gradio(uploaded_video):
+    # Normalize different possible Gradio inputs: str path, list, dict, data URI, or URL
+    if not uploaded_video:
         return None, "Please upload a video file."
 
-    print(f"Gradio provided temp video path: {uploaded_video_path_temp}")
-    base_name = os.path.basename(uploaded_video_path_temp)
-    # สร้าง path ที่ unique มากขึ้นสำหรับไฟล์ที่ copy มา
-    timestamp_str = str(int(time.time() * 1000)) # เพิ่ม timestamp เพื่อความ unique
-    local_video_path = os.path.join(os.getcwd(), f"{timestamp_str}_{base_name}") 
+    # Unwrap list/tuple (Gradio Examples sometimes send a list)
+    if isinstance(uploaded_video, (list, tuple)):
+        if len(uploaded_video) == 0:
+            return None, "No video uploaded."
+        uploaded_video = uploaded_video[0]
 
+    # If Gradio passed a dict-like object, try common keys
+    if isinstance(uploaded_video, dict):
+        for key in ('name', 'tmp_path', 'tempfile', 'file', 'path', 'filename', 'tempfile_path', 'data'):
+            if key in uploaded_video:
+                uploaded_video = uploaded_video[key]
+                break
+        else:
+            uploaded_video = str(uploaded_video)
+
+    # If it's a file-like object with .name, use that
+    if hasattr(uploaded_video, 'name') and isinstance(getattr(uploaded_video, 'name'), str):
+        uploaded_video = getattr(uploaded_video, 'name')
+
+    # At this point uploaded_video should be a string (path, data URI, or URL)
+    uploaded_str = str(uploaded_video)
+    print(f"Gradio provided input (normalized): {uploaded_str}")
+
+    # Prepare unique local path
+    timestamp_str = str(int(time.time() * 1000))
+    local_video_path = None
+    created_local_copy = False
+
+    # Handle data URI (base64)
     try:
-        print(f"Copying video from {uploaded_video_path_temp} to {local_video_path}")
-        shutil.copy2(uploaded_video_path_temp, local_video_path)
-        print(f"Video copied successfully to {local_video_path}")
-        
+        import re, base64, urllib.request
+        data_uri_match = re.match(r"data:(?P<mime>[^;]+);base64,(?P<data>.+)", uploaded_str)
+        if data_uri_match:
+            mime = data_uri_match.group('mime')
+            data_b64 = data_uri_match.group('data')
+            ext = 'mp4'
+            if 'webm' in mime: ext = 'webm'
+            elif 'quicktime' in mime or 'mov' in mime: ext = 'mov'
+            local_video_path = os.path.join(os.getcwd(), f"{timestamp_str}_uploaded.{ext}")
+            print(f"Decoding data URI to {local_video_path} (mime={mime})")
+            with open(local_video_path, 'wb') as fw:
+                fw.write(base64.b64decode(data_b64))
+            created_local_copy = True
+        elif re.match(r'https?://', uploaded_str):
+            # Remote URL: download it
+            local_video_path = os.path.join(os.getcwd(), f"{timestamp_str}_" + os.path.basename(uploaded_str))
+            print(f"Downloading remote video URL to {local_video_path}")
+            urllib.request.urlretrieve(uploaded_str, local_video_path)
+            created_local_copy = True
+        else:
+            # Treat as local temp path provided by Gradio
+            base_name = os.path.basename(uploaded_str)
+            # If the provided path already exists on disk, use it directly (no extra copy)
+            if os.path.exists(uploaded_str):
+                local_video_path = uploaded_str
+                created_local_copy = False
+                print(f"Using provided local path without copying: {local_video_path}")
+            else:
+                local_video_path = os.path.join(os.getcwd(), f"{timestamp_str}_{base_name}")
+                try:
+                    print(f"Copying video from {uploaded_str} to {local_video_path}")
+                    shutil.copy2(uploaded_str, local_video_path)
+                    created_local_copy = True
+                    print(f"Video copied successfully to {local_video_path}")
+                except Exception as e:
+                    # Fallback: try reading and writing as binary
+                    try:
+                        print(f"Copy failed with {e}; trying binary read/write fallback")
+                        with open(uploaded_str, 'rb') as fr, open(local_video_path, 'wb') as fw:
+                            fw.write(fr.read())
+                        created_local_copy = True
+                        print(f"Fallback copy succeeded to {local_video_path}")
+                    except Exception as e2:
+                        error_msg = f"Error copying video file: {e}; fallback error: {e2}\nInput: {uploaded_str}"
+                        print(error_msg)
+                        return None, error_msg
     except Exception as e:
-        error_msg = f"Error copying video file: {e}\nTemp path: {uploaded_video_path_temp}"
-        print(error_msg); return None, error_msg
+        error_msg = f"Failed to prepare uploaded video: {e}\nInput: {uploaded_video}"
+        print(error_msg)
+        return None, error_msg
 
     local_feature_sequence = deque(maxlen=INPUT_TIMESTEPS)
     local_last_fall_event_time = 0 # ใช้ local_last_fall_event_time_sec เพื่อความชัดเจนว่าเป็นหน่วยวินาทีของวิดีโอ
@@ -292,7 +701,9 @@ def process_video_for_gradio(uploaded_video_path_temp):
         error_msg = f"Error: OpenCV cannot open video file at copied path: {local_video_path}"
         if os.path.exists(local_video_path): print(f"File size of '{local_video_path}': {os.path.getsize(local_video_path)} bytes")
         else: print(f"File '{local_video_path}' does not exist after copy attempt.")
-        if os.path.exists(local_video_path): os.remove(local_video_path) # Cleanup
+        if created_local_copy and os.path.exists(local_video_path):
+            try: os.remove(local_video_path)
+            except Exception: pass
         return None, error_msg
 
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -427,35 +838,79 @@ def process_video_for_gradio(uploaded_video_path_temp):
     cap.release()
 
     if not processed_frames_list:
-        if os.path.exists(local_video_path):
+        if created_local_copy and os.path.exists(local_video_path):
             try: os.remove(local_video_path); print(f"Cleaned up temp copied file: {local_video_path}")
             except Exception as e: print(f"Could not remove temp copied file {local_video_path} after no frames: {e}")
         return None, "No frames processed. Video might be empty or unreadable after copy."
 
-    output_temp_video_path = f"processed_gradio_output_{timestamp_str}.mp4"
+    # Build absolute output path for Gradio to serve reliably
+    output_temp_video_path = os.path.abspath(f"processed_gradio_output_{timestamp_str}.mp4")
     height, width, _ = processed_frames_list[0].shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_temp_video_path, fourcc, fps, (width, height))
-    for frame_out_bgr in processed_frames_list:
-        video_writer.write(frame_out_bgr)
-    video_writer.release()
+
+    # Helper to write frames using OpenCV and a given fourcc
+    def _write_video(path, fourcc_code):
+        fourcc_val = cv2.VideoWriter_fourcc(*fourcc_code)
+        writer = cv2.VideoWriter(path, fourcc_val, fps, (width, height))
+        if not writer.isOpened():
+            return False
+        for frame_out_bgr in processed_frames_list:
+            writer.write(frame_out_bgr)
+        writer.release()
+        return True
+
+    written = _write_video(output_temp_video_path, 'mp4v')
+    # Fallback: try AVI/MJPEG if mp4v fails
+    if not written:
+        fallback_path = os.path.abspath(f"processed_gradio_output_{timestamp_str}.avi")
+        written = _write_video(fallback_path, 'XVID')
+        if written:
+            output_temp_video_path = fallback_path
+
+    # Verify that the written file contains frames
+    def _video_has_frames(path):
+        try:
+            cap_check = cv2.VideoCapture(path)
+            cnt = int(cap_check.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            cap_check.release()
+            return cnt > 0
+        except Exception:
+            return False
+
+    # Re-encode output to a web-friendly H.264 MP4 so browsers can play it reliably
     try:
         import subprocess, imageio_ffmpeg
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        web_mp4 = "web_" + output_temp_video_path
-        res = subprocess.run([ffmpeg_exe, "-y", "-i", output_temp_video_path, "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", "-preset", "ultrafast", web_mp4], capture_output=True, text=True)
-        if res.returncode != 0:
-            print(f"FFMPEG OUT ERROR: {res.stderr}")
-        elif os.path.exists(web_mp4):
-            os.remove(output_temp_video_path)
+        web_mp4 = os.path.abspath(f"web_processed_gradio_output_{timestamp_str}.mp4")
+        # Run ffmpeg to convert to H.264 / yuv420p which is broadly supported by browsers
+        res = subprocess.run([
+            ffmpeg_exe, "-y", "-i", output_temp_video_path,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-crf", "23",
+            web_mp4
+        ], capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(web_mp4) and os.path.getsize(web_mp4) > 1024:
+            try:
+                os.remove(output_temp_video_path)
+            except Exception:
+                pass
             output_temp_video_path = web_mp4
+        else:
+            print(f"FFMPEG re-encode failed or produced invalid output: {res.stderr}")
     except Exception as e:
-        print(f"Không thể re-encode video H264: {e}")
+        print(f"Could not re-encode video with ffmpeg: {e}")
+
+    # Final validation: file must exist and be non-trivial
+    if not os.path.exists(output_temp_video_path) or os.path.getsize(output_temp_video_path) < 1024:
+        print(f"Processed video invalid or missing: {output_temp_video_path} (size={os.path.getsize(output_temp_video_path) if os.path.exists(output_temp_video_path) else 'NA'})")
+        if created_local_copy and os.path.exists(local_video_path):
+            try: os.remove(local_video_path); print(f"Cleaned up temp copied file: {local_video_path}")
+            except Exception as e: print(f"Could not remove temp copied file {local_video_path}: {e}")
+        return None, "Processed video could not be created (write/encode failure). Check server logs."
+
     print(f"Processed video saved to: {output_temp_video_path}")
     
     summary_text = "Recent Events / Status:\n" + "\n".join(overall_status_updates[-15:])
 
-    if os.path.exists(local_video_path):
+    if created_local_copy and os.path.exists(local_video_path):
         try: os.remove(local_video_path); print(f"Cleaned up temp copied file: {local_video_path}")
         except Exception as e: print(f"Could not remove temp copied file {local_video_path}: {e}")
 
@@ -504,14 +959,13 @@ with gr.Blocks(title="Hệ thống Cảnh Báo Té Ngã", css="footer {display: 
         with gr.Row():
             image_in = gr.Image(sources=["webcam"], streaming=True, label="Đầu Vào Webcam RGB")
             image_out = gr.Image(label="Live Camera Kết Quả (Pose Inference)")
+        # Toggle to enable/disable full skeleton drawing (keeps UI responsive when disabled)
+        draw_full_toggle = gr.Checkbox(label="Vẽ khung xương đầy đủ (Full skeleton)", value=True)
         
         rt_log = gr.Textbox(label="Logs Tình Trạng Web-cam Time Queue", max_lines=10)
         
         state_rt = gr.State()
-        image_in.stream(fn=process_frame_for_realtime, inputs=[image_in, state_rt], outputs=[image_out, state_rt])
-        def ext_log(s):
-            return s[2] if s else "Trạng thái nghỉ"
-        state_rt.change(fn=ext_log, inputs=state_rt, outputs=rt_log)
+        image_in.stream(fn=process_frame_for_realtime, inputs=[image_in, state_rt, draw_full_toggle], outputs=[image_out, rt_log, state_rt])
 
 if __name__ == "__main__":
     print("Starting Gradio Web Server...")
