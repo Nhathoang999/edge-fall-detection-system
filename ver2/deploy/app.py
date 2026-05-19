@@ -5,6 +5,7 @@ import tensorflow as tf
 print("tf imported", flush=True)
 tflite = tf.lite
 import time
+import json
 from collections import deque
 import gradio as gr
 import os
@@ -161,9 +162,18 @@ def _cleanup_sessions():
 atexit.register(_cleanup_sessions)
 
 # --- CẤU HÌNH HỆ THỐNG (Tinh chỉnh cho phù hợp với Gradio) ---
-MODEL_PATH = 'fall_detection_transformer.tflite' # Đường dẫn tới Model AI
+_DEPLOY_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(_DEPLOY_DIR, 'fall_detection_transformer.tflite')
 INPUT_TIMESTEPS = 30 # Độ dài mỗi Sequence để nhét vào AI
-FALL_CONFIDENCE_THRESHOLD = 0.90 # Tỉ lệ rơi ngã (90%)
+FALL_CONFIDENCE_THRESHOLD = 0.90
+_threshold_path = os.path.join(_DEPLOY_DIR, 'threshold.json')
+if os.path.isfile(_threshold_path):
+    try:
+        with open(_threshold_path, 'r', encoding='utf-8') as _tf:
+            FALL_CONFIDENCE_THRESHOLD = float(json.load(_tf).get('threshold', FALL_CONFIDENCE_THRESHOLD))
+        print(f"Loaded threshold from {_threshold_path}: {FALL_CONFIDENCE_THRESHOLD}", flush=True)
+    except Exception as _e:
+        print(f"Warning: could not load threshold.json: {_e}", flush=True)
 MIN_KEYPOINT_CONFIDENCE_FOR_NORMALIZATION = 0.3 # Ngưỡng tự tin thấp nhất để trích xuất điểm ảnh Landmarks
 mp_pose = mp.solutions.pose
 pose_complexity = 0 # Thu nhỏ độ phức tạp của Pose về nhỏ nhất (= 0) để chạy webcam không bị giật lag
@@ -937,9 +947,12 @@ for filename in example_filenames:
         print(f"Warning: Example file '{filename}' not found in the repository root. It will not be added to examples.")
 
 # -- Frontend Refactored (Blocks) --
-with gr.Blocks(title="Hệ thống Cảnh Báo Té Ngã", css="footer {display: none !important;}") as demo:
-    gr.Markdown("# Hệ thống Cảnh Báo Té Ngã Sử Dụng LSTM TFLite")
-    gr.Markdown("Nạp mô hình nhận diện qua ảnh tĩnh chậm rãi (Video) hoặc Camera Live streaming liên tiếp tốc độ cao.")
+with gr.Blocks(title="Hệ thống Cảnh Báo Té Ngã v2", css="footer {display: none !important;}") as demo:
+    gr.Markdown("# Hệ thống Cảnh Báo Té Ngã (ver2) — Transformer TFLite")
+    gr.Markdown(
+        f"Video-level split training · ngưỡng fall = **{FALL_CONFIDENCE_THRESHOLD:.2f}** (từ `threshold.json` trên val). "
+        "Hỗ trợ upload video và webcam realtime."
+    )
     
     with gr.Tab("Xử lý Video (Độ Chính Xác Chuẩn)"):
         with gr.Row():

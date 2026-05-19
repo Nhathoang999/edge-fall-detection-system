@@ -1,0 +1,9 @@
+data/raw/**/*.npy
+data/splits/**/*.npy
+artifacts/
+*.keras
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+deploy/*.mp4
+fall_model_exported_sm/

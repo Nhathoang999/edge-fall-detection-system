@@ -1,0 +1,4 @@
+{
+  "threshold": 0.5,
+  "note": "Sẽ được ghi đè sau khi chạy: python scripts/train.py --model transformer"
+}
