@@ -59,6 +59,8 @@ def create_notebook():
     train_code = (root / "scripts/train.py").read_text(encoding="utf-8")
     extract_code = (root / "tools/extract_features.py").read_text(encoding="utf-8")
     split_code = (root / "tools/build_video_split.py").read_text(encoding="utf-8")
+    keypoints_code = (root / "src/keypoints.py").read_text(encoding="utf-8")
+    skeleton_code = (root / "src/skeleton.py").read_text(encoding="utf-8")
 
     # Add all required Kaggle markdown and code cells
     add_markdown("# FULL PIPELINE: TỪ VIDEO GỐC ĐẾN TFLITE TRÊN KAGGLE\n\nNotebook này bao gồm toàn bộ quá trình: Trích xuất khung xương (MediaPipe) -> Chia tập dữ liệu (Video-level) -> Huấn luyện mô hình (LSTM/Transformer) -> Đánh giá & Xuất TFLite.")
@@ -105,6 +107,8 @@ except AttributeError:
     add_code("\n".join(split_funcs))
     
     add_markdown("## 5. Dataloader & Models & Metrics & Export TFLite")
+    add_code(keypoints_code)
+    add_code(skeleton_code)
     add_code(data_loader_code)
     add_code(lstm_code)
     add_code(transformer_code)
