@@ -7,3 +7,5 @@ __pycache__/
 .ipynb_checkpoints/
 deploy/*.mp4
 fall_model_exported_sm/
+*.mp4
+*.avi
