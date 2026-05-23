@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+websockets
+opencv-python
+mediapipe
+tensorflow
+RPi.GPIO; platform_system == "Linux"

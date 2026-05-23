@@ -1,0 +1,186 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: #121212;
+  color: #e0e0e0;
+}
+
+.dashboard-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  transition: background-color 0.3s ease;
+}
+
+/* Alert Flashing Effect */
+@keyframes flashRed {
+  0% { box-shadow: inset 0 0 0px 0px rgba(255, 0, 0, 0); }
+  50% { box-shadow: inset 0 0 50px 10px rgba(255, 0, 0, 0.8); }
+  100% { box-shadow: inset 0 0 0px 0px rgba(255, 0, 0, 0); }
+}
+
+.dashboard-container.alert-mode {
+  animation: flashRed 1s infinite;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 20px;
+}
+
+.header h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.status-badge {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.status-badge.safe {
+  background-color: rgba(0, 200, 83, 0.2);
+  color: #00e676;
+  border: 1px solid #00c853;
+}
+
+.status-badge.danger {
+  background-color: rgba(255, 23, 68, 0.2);
+  color: #ff1744;
+  border: 1px solid #ff1744;
+}
+
+.main-content {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  gap: 20px;
+  flex: 1;
+}
+
+.video-container {
+  background-color: #1e1e1e;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #333;
+  min-height: 400px;
+}
+
+.video-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.placeholder {
+  color: #888;
+  font-size: 1.2rem;
+}
+
+.overlay-alert {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  font-weight: 900;
+  color: rgba(255, 0, 0, 0.8);
+  border: 5px solid rgba(255, 0, 0, 0.8);
+  padding: 10px 30px;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.card {
+  background-color: #1e1e1e;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #333;
+}
+
+.card h3 {
+  font-size: 1.2rem;
+  margin-bottom: 15px;
+  color: #fff;
+  border-bottom: 1px solid #333;
+  padding-bottom: 10px;
+}
+
+.card p {
+  margin-bottom: 10px;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+.text-danger {
+  color: #ff1744 !important;
+  font-weight: bold;
+}
+
+.controls-card {
+  border-left: 4px solid #00e676;
+}
+
+.controls-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-upload, .btn-webcam {
+  display: inline-block;
+  padding: 12px 15px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.btn-upload {
+  background-color: #3f51b5;
+  color: white;
+}
+.btn-upload:hover {
+  background-color: #303f9f;
+}
+
+.btn-webcam {
+  background-color: #424242;
+  color: white;
+}
+.btn-webcam:hover {
+  background-color: #616161;
+}
+
+.active {
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.5);
+  border: 1px solid #00e676;
+}
+

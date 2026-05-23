@@ -1,0 +1,4 @@
+{
+  "threshold": 0.10,
+  "note": "Cập nhật ngưỡng tối ưu từ tập VAL trên Kaggle để tối đa hóa Recall (bắt ngã chính xác)"
+}
