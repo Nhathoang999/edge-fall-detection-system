@@ -20,7 +20,7 @@ function App() {
     if (wsRef.current) wsRef.current.close();
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.hostname;
-    wsRef.current = new WebSocket(`${wsProtocol}//${host}:8000/ws/video`);
+    wsRef.current = new WebSocket(`${wsProtocol}//${host}:8002/ws/video`);
 
     wsRef.current.onopen = () => {
       setStatus("CONNECTED");
@@ -58,7 +58,7 @@ function App() {
     try {
       setStatus("UPLOADING VIDEO...");
       const host = window.location.hostname;
-      const response = await fetch(`http://${host}:8000/upload-video`, {
+      const response = await fetch(`http://${host}:8002/upload-video`, {
         method: "POST",
         body: formData,
       });
@@ -75,7 +75,7 @@ function App() {
   const handleResetCamera = async () => {
     try {
       const host = window.location.hostname;
-      const response = await fetch(`http://${host}:8000/reset-camera`, {
+      const response = await fetch(`http://${host}:8002/reset-camera`, {
         method: "POST"
       });
       const result = await response.json();

@@ -1,0 +1,45 @@
+HƯỚNG DẪN CHẠY HỆ THỐNG PHÁT HIỆN TÉ NGÃ (FULLSTACK) - VER 2
+
+Hệ thống bao gồm 2 phần: Backend (Python/FastAPI) và Frontend (React/Vite). Bạn cần mở 2 cửa sổ Terminal (PowerShell) riêng biệt để chạy song song hai phần này.
+
+=========================================
+PHẦN 1: CHẠY BACKEND (XỬ LÝ AI & CẢNH BÁO)
+=========================================
+1. Mở Terminal/PowerShell và di chuyển vào thư mục backend:
+   cd D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend
+
+2. Kích hoạt môi trường ảo (Virtual Environment):
+   .\venv\Scripts\Activate.ps1
+   (Nếu bị lỗi quyền thực thi màu đỏ, chạy lệnh này trước: Set-ExecutionPolicy Unrestricted -Scope CurrentUser)
+
+3. Cài đặt các thư viện (chỉ cần làm ở lần đầu tiên hoặc khi chuyển sang máy khác):
+   pip install -r requirements.txt
+
+4. Khởi động server Backend:
+   (LƯU Ý: Bắt buộc chạy ở cổng 8002 vì Frontend đã được cài đặt cứng gọi vào cổng này)
+   python -m uvicorn main:app --port 8002 --reload
+
+=> Backend đã sẵn sàng nhận video và phân tích.
+
+
+=========================================
+PHẦN 2: CHẠY FRONTEND (GIAO DIỆN DASHBOARD)
+=========================================
+1. Mở một cửa sổ Terminal/PowerShell MỚI và di chuyển vào thư mục frontend:
+   cd D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\frontend
+
+2. Cài đặt các gói thư viện Node.js (chỉ cần làm ở lần đầu):
+   npm install
+
+3. Khởi động giao diện người dùng:
+   npm run dev
+
+4. Mở trình duyệt Web (Chrome/Edge) và truy cập vào đường dẫn xuất hiện trên màn hình Terminal (thường là http://localhost:5174 hoặc http://localhost:5173).
+
+
+=========================================
+MỘT SỐ LƯU Ý QUAN TRỌNG KHI TEST
+=========================================
+1. Cảnh báo Telegram: Trước khi test video ngã, hãy mở app Telegram và nhắn một tin (ví dụ /start hoặc hello) cho bot @An_fall_detecion_bot để bot lấy được Chat ID của bạn.
+2. Cảnh báo Email: Check hộp thư mục Spam (Thư rác) nếu không thấy thư ở hộp thư đến. (Cấu hình tài khoản nằm tại backend/alert_service.py)
+3. Thứ tự chạy: Luôn nhớ bật Backend lên trước, sau đó mới bật Frontend để hệ thống WebSocket kết nối được mạch lạc.

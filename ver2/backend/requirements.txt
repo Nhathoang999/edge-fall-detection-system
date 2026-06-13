@@ -5,3 +5,6 @@ opencv-python
 mediapipe
 tensorflow
 RPi.GPIO; platform_system == "Linux"
+python-multipart
+
+python-dotenv

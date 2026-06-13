@@ -7,8 +7,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
 import mediapipe as mp
+import mediapipe.python.solutions.pose as mp_pose
+import mediapipe.python.solutions.drawing_utils as mp_drawing
 import numpy as np
 import tensorflow as tf
+from ai_edge_litert.interpreter import Interpreter
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -22,6 +25,7 @@ import config
 from src.keypoints import get_kpt_indices
 from backend.hardware import setup_hardware, trigger_alarm, cleanup_hardware
 from backend.skeleton import normalize_skeleton_frame
+from backend.alert_service import handle_fall_event
 
 app = FastAPI(title="Edge IoT Fall Detection")
 
@@ -45,11 +49,10 @@ except Exception:
     FALL_CONFIDENCE_THRESHOLD = 0.10
 MODEL_PATH = os.path.join(BASE_DIR, "model.tflite")
 
-mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(static_image_mode=False, model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 # Load TFLite Model
-interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+interpreter = Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
@@ -164,6 +167,11 @@ async def websocket_video_endpoint(websocket: WebSocket):
             image_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
             results = pose.process(image_rgb)
             
+            # Vẽ khung xương lên frame trước
+            if results.pose_landmarks:
+                mp_drawing.draw_landmarks(
+                    frame_resized, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            
             feats = extract_features(results)
             feature_sequence.append(feats)
             
@@ -182,17 +190,32 @@ async def websocket_video_endpoint(websocket: WebSocket):
                     label = "fall"
                     conf = float(out)
                     current_time = time.time()
+                    
+                    # Vẽ hiệu ứng EMERGENCY giống hình minh hoạ
+                    text = "EMERGENCY"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 3
+                    thickness = 7
+                    color = (0, 0, 255) # Đỏ
+                    (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
+                    x = (frame_resized.shape[1] - text_width) // 2
+                    y = text_height + 40 # Đưa lên góc trên cùng (cách mép trên một chút)
+                    pad = 15
+                    # Vẽ khung chữ nhật và text
+                    cv2.rectangle(frame_resized, (x - pad, y - text_height - pad), (x + text_width + pad, y + pad), color, 4)
+                    cv2.putText(frame_resized, text, (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
+
                     if current_time - last_fall_time > FALL_COOLDOWN:
                         print("TRIGGER ALARM!")
                         threading.Thread(target=trigger_alarm, args=(2.0,), daemon=True).start()
+                        
+                        # Gọi module cảnh báo mới (Lưu ảnh, Ghi log, Gửi Telegram, Gửi Email)
+                        handle_fall_event(frame_resized, conf)
+                        
                         last_fall_time = current_time
                 else:
                     label = "non_fall"
                     conf = float(1.0 - out)
-            
-            if results.pose_landmarks:
-                mp.solutions.drawing_utils.draw_landmarks(
-                    frame_resized, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
             
             _, buffer = cv2.imencode('.jpg', frame_resized, [cv2.IMWRITE_JPEG_QUALITY, 60])
             jpg_as_text = base64.b64encode(buffer).decode('utf-8')

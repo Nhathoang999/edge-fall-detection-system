@@ -1,0 +1,25 @@
+2026-06-12 18:35:44,805 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260612_183544.jpg
+2026-06-12 18:35:44,805 - INFO - FALL DETECTED | Confidence: 0.1473 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260612_183544.jpg
+2026-06-12 18:35:45,578 - INFO - Đã tự động fetch Telegram Chat ID: 6054055103
+2026-06-12 18:35:49,802 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260612_183549.jpg
+2026-06-12 18:35:49,802 - INFO - FALL DETECTED | Confidence: 0.2640 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260612_183549.jpg
+2026-06-12 18:35:52,155 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-12 18:35:57,420 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-12 18:35:57,790 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-12 18:36:01,997 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-13 20:57:03,420 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205703.jpg
+2026-06-13 20:57:03,422 - INFO - FALL DETECTED | Confidence: 0.2017 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205703.jpg
+2026-06-13 20:57:04,293 - WARNING - Không tìm thấy Chat ID Telegram. Nhắn /start cho bot trước.
+2026-06-13 20:57:09,467 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-13 20:58:26,495 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205826.jpg
+2026-06-13 20:58:26,495 - INFO - FALL DETECTED | Confidence: 0.1075 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205826.jpg
+2026-06-13 20:58:27,304 - WARNING - Không tìm thấy Chat ID Telegram. Nhắn /start cho bot trước.
+2026-06-13 20:58:32,544 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-13 20:59:33,612 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205933.jpg
+2026-06-13 20:59:33,612 - INFO - FALL DETECTED | Confidence: 0.1590 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_205933.jpg
+2026-06-13 20:59:34,400 - WARNING - Không tìm thấy Chat ID Telegram. Nhắn /start cho bot trước.
+2026-06-13 20:59:39,300 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-13 21:03:43,153 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_210343.jpg
+2026-06-13 21:03:43,153 - INFO - FALL DETECTED | Confidence: 0.3985 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260613_210343.jpg
+2026-06-13 21:03:45,943 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-13 21:03:51,078 - INFO - Đã gửi cảnh báo qua Email.
