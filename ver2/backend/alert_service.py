@@ -116,6 +116,10 @@ def log_alert(confidence: float, filepath: str) -> None:
 
 # ================= Main Orchestrator =================
 def _handle_fall_process(frame, confidence: float):
+    # 0. Phát cảnh báo giọng nói (Voice Alert) NGAY LẬP TỨC
+    from backend.voice_alert import voice_notifier
+    voice_notifier.fall_alert(confidence)
+
     # 1. Lưu ảnh frame hiện tại
     filepath = save_fall_frame(frame)
     
