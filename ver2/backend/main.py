@@ -57,30 +57,7 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-global_video_source = 0 # 0 là Webcam, nếu là string thì là file path
-
-@app.post("/upload-video")
-def upload_video(file: UploadFile = File(...)):
-    global global_video_source
-    print("Received upload request for", file.filename)
-    file_location = os.path.join(BASE_DIR, "temp_video.mp4")
-    try:
-        with open(file_location, "wb+") as file_object:
-            shutil.copyfileobj(file.file, file_object)
-        global_video_source = file_location
-        print("Upload successful, switching video source to", file_location)
-        return {"info": f"Video uploaded", "source": file_location}
-    except Exception as e:
-        print("Upload failed:", e)
-        return {"error": str(e)}
-
-@app.post("/reset-camera")
-def reset_camera():
-    global global_video_source
-    print("Resetting camera to webcam")
-    global_video_source = 0
-    return {"info": "Switched to Webcam", "source": 0}
-
+global_video_source = 0 # Chỉ sử dụng Webcam
 
 def extract_features(results):
     features = np.zeros(17 * 3, dtype=np.float32)
@@ -122,15 +99,14 @@ async def websocket_video_endpoint(websocket: WebSocket):
     global global_video_source
     await websocket.accept()
     
-    current_source = global_video_source
-    if current_source == 0 and os.name == 'nt':
+    current_source = 0
+    if os.name == 'nt':
         cap = cv2.VideoCapture(current_source, cv2.CAP_DSHOW)
     else:
         cap = cv2.VideoCapture(current_source)
         
-    if current_source == 0:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
     feature_sequence = deque(maxlen=INPUT_TIMESTEPS)
     last_fall_time = 0
@@ -138,29 +114,10 @@ async def websocket_video_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Check nếu nguồn video thay đổi (ví dụ user vừa upload file)
-            if current_source != global_video_source:
-                cap.release()
-                current_source = global_video_source
-                if current_source == 0 and os.name == 'nt':
-                    cap = cv2.VideoCapture(current_source, cv2.CAP_DSHOW)
-                else:
-                    cap = cv2.VideoCapture(current_source)
-                    
-                if current_source == 0:
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                feature_sequence.clear()
-            
             ret, frame = cap.read()
             if not ret:
-                if current_source != 0:
-                    # Video đã hết, lặp lại từ đầu
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
-                else:
-                    await asyncio.sleep(0.1)
-                    continue
+                await asyncio.sleep(0.1)
+                continue
             
             # Frame resize nhẹ để AI chạy nhanh hơn nếu video gốc 4K/1080p
             frame_resized = cv2.resize(frame, (640, 480))

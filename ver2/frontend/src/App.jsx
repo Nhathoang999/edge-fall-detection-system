@@ -6,7 +6,6 @@ function App() {
   const [status, setStatus] = useState("CONNECTING...");
   const [confidence, setConfidence] = useState(0.0);
   const [isFall, setIsFall] = useState(false);
-  const [videoSourceType, setVideoSourceType] = useState("webcam");
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -48,44 +47,8 @@ function App() {
     };
   };
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
 
-    try {
-      setStatus("UPLOADING VIDEO...");
-      const host = window.location.hostname;
-      const response = await fetch(`http://${host}:8002/upload-video`, {
-        method: "POST",
-        body: formData,
-      });
-      const result = await response.json();
-      console.log(result);
-      setVideoSourceType("video");
-      setStatus("PLAYING VIDEO");
-    } catch (error) {
-      console.error("Error uploading video", error);
-      setStatus("UPLOAD FAILED");
-    }
-  };
-
-  const handleResetCamera = async () => {
-    try {
-      const host = window.location.hostname;
-      const response = await fetch(`http://${host}:8002/reset-camera`, {
-        method: "POST"
-      });
-      const result = await response.json();
-      console.log(result);
-      setVideoSourceType("webcam");
-      setStatus("SWITCHED TO WEBCAM");
-    } catch (error) {
-      console.error("Error resetting camera", error);
-    }
-  };
 
   return (
     <div className={`dashboard-container ${isFall ? "alert-mode" : ""}`}>
@@ -109,28 +72,13 @@ function App() {
         </div>
         
         <aside className="sidebar">
-          <div className="card controls-card">
-            <h3>Video Source Controls</h3>
-            <div className="controls-group">
-              <label className={`btn-upload ${videoSourceType === "video" ? "active" : ""}`}>
-                Upload Video Test (.mp4)
-                <input type="file" accept="video/mp4,video/avi" onChange={handleFileUpload} hidden />
-              </label>
-              
-              <button 
-                className={`btn-webcam ${videoSourceType === "webcam" ? "active" : ""}`} 
-                onClick={handleResetCamera}
-              >
-                Use Live Webcam
-              </button>
-            </div>
-          </div>
+
 
           <div className="card">
             <h3>System Info</h3>
             <p><strong>Device:</strong> Edge Computing Node</p>
             <p><strong>Model:</strong> TFLite Skeleton Transformer</p>
-            <p><strong>Source:</strong> {videoSourceType === "webcam" ? "Webcam (Local)" : "Uploaded Video"}</p>
+            <p><strong>Source:</strong> Webcam (Local)</p>
           </div>
 
           <div className="card">
