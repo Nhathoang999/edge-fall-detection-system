@@ -71,3 +71,15 @@
 2026-06-17 22:02:34,452 - INFO - Đã gửi cảnh báo qua Email.
 2026-06-17 22:05:02,456 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260617_220502.jpg
 2026-06-17 22:05:02,457 - INFO - FALL DETECTED | Confidence: 0.1497 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260617_220502.jpg
+2026-06-27 19:56:34,523 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195634.jpg
+2026-06-27 19:56:34,523 - INFO - FALL DETECTED | Confidence: 0.1241 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195634.jpg
+2026-06-27 19:56:41,904 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-27 19:56:44,788 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195644.jpg
+2026-06-27 19:56:44,788 - INFO - FALL DETECTED | Confidence: 0.1868 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195644.jpg
+2026-06-27 19:56:47,189 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-27 19:56:47,532 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-27 19:56:49,811 - INFO - Đã lưu ảnh frame tại: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195649.jpg
+2026-06-27 19:56:49,811 - INFO - FALL DETECTED | Confidence: 0.2640 | Saved Image: D:\Du_Lieu_Hoc\KLTN\edge-fall-detection-system\ver2\backend\alerts\fall_20260627_195649.jpg
+2026-06-27 19:56:51,165 - INFO - Đã gửi cảnh báo qua Email.
+2026-06-27 19:56:51,679 - INFO - Đã gửi cảnh báo qua Telegram.
+2026-06-27 19:56:58,091 - INFO - Đã gửi cảnh báo qua Email.

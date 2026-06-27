@@ -8,5 +8,6 @@ RPi.GPIO; platform_system == "Linux"
 python-multipart
 edge-tts
 pygame
+winsdk
 
 python-dotenv

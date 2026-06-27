@@ -126,15 +126,47 @@ def _handle_fall_process(frame, confidence: float):
     # 2. Ghi log
     log_alert(confidence, filepath)
     
-    # Chuẩn bị nội dung cảnh báo
-    message = f"🚨 CẢNH BÁO: Phát hiện người té ngã!"
-    subject = "⚠️ Cảnh báo khẩn cấp: Phát hiện té ngã trên Camera"
+    # 3. Lấy vị trí địa lý hiện tại (Geolocation)
+    import asyncio
+    from backend.location_service import location_service
     
-    # 3. Gửi cảnh báo Telegram
-    send_telegram_alert(message, filepath)
+    try:
+        # Chạy hàm async trong đồng bộ
+        location_data = asyncio.run(location_service.get_current_location())
+    except Exception as e:
+        logger.error(f"Lỗi khi chạy event loop của location: {e}")
+        location_data = None
+        
+    if location_data:
+        lat, lon = location_data
+        maps_link = location_service.get_google_maps_link(lat, lon)
+    else:
+        maps_link = "Vị trí không khả dụng (Location unavailable)"
+        
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # 4. Gửi email
-    send_email_alert(subject, message, filepath)
+    # 4. Chuẩn bị nội dung tin nhắn Telegram
+    telegram_message = (
+        "⚠️ FALL DETECTED\n\n"
+        f"Time: {timestamp}\n"
+        f"Confidence: {confidence*100:.1f}%\n\n"
+        f"Location:\n{maps_link}"
+    )
+    
+    # 5. Chuẩn bị nội dung Email
+    subject = "Emergency Fall Detection Alert"
+    email_body = (
+        "Fall detected.\n\n"
+        f"Time:\n{timestamp}\n\n"
+        f"Confidence:\n{confidence*100:.1f}%\n\n"
+        f"Location:\n{maps_link}"
+    )
+    
+    # 6. Gửi cảnh báo Telegram
+    send_telegram_alert(telegram_message, filepath)
+    
+    # 7. Gửi email
+    send_email_alert(subject, email_body, filepath)
 
 def handle_fall_event(frame, confidence: float) -> None:
     """
